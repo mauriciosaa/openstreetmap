@@ -1,0 +1,194 @@
+<meta charset="UTF-8">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
+<link rel="stylesheet" href="/leaflet/leaflet.css" />
+<link rel="stylesheet" href="styles.css" />
+
+<script src="leaflet/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+<div id="map"></div>
+
+<script>
+    var map = L.map('map', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).setView([20, 0], 2);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    var markers = L.markerClusterGroup();
+    var markerList = []; // Lista para armazenar todos os marcadores
+
+    var filiais = [
+        {
+            country: 'BRASIL',
+            municipality: 'Betim',
+            uf: 'MG'
+        },
+    ]
+
+    var filterJson = [
+        {
+            country: 'BRASIL',
+            municipality: 'Abadia DE GOIÁS',
+            uf: 'GO'
+        },
+        {
+            country: 'BRASIL',
+            municipality: 'GUARULHOS',
+            uf: 'SP'
+        },
+        {
+            country: 'BRASIL',
+            municipality: 'Manaus',
+            uf: 'AM'
+        },
+        {
+            country: 'CANADÁ',
+            municipality: 'TORONTO',
+            uf: 'ONTÁRIO'
+        },
+        {
+            country: 'CANADÁ',
+            municipality: 'VANCOUVER',
+            uf: 'BRITISH COLUMBIA'
+        },
+        {
+            country: 'Japão',
+            municipality: 'OSAKA',
+            uf: 'OSAKA'
+        }
+    ];
+
+    var filteredData = [];
+
+    var zoomedIcon = L.icon({
+        iconUrl: 'zoomed-icon.png',
+        iconSize: [30, 45],
+        iconAnchor: [15, 45]
+    });
+
+    var fetchCidadesBrasil = fetch('cidades_brasil.geojson')
+        .then(response => response.json())
+        .then(data => {
+           
+            let onForEachFeature = function (feature, layer) {
+                let country = filterJson.find(f =>
+                    f.municipality.toLowerCase() === feature.properties.municipality?.toLowerCase() &&
+                    f.uf.toLowerCase() === feature.properties.uf?.toLowerCase()
+                )?.country;
+
+                let tooltipText = "País: " + country + " - <br/>Estado: " + feature.properties.municipality + "<br/> UF: " + feature.properties.uf + "<br/>";
+
+                layer.bindPopup(tooltipText);
+            };
+
+            let onForEachFeatureFilial = function (feature, layer) {
+                let tooltipText = "Filial<br/>Estado: " + feature.properties.municipality + "<br/> UF: " + feature.properties.uf + "<br/>";
+
+                let marker = L.marker([feature.properties.LAT, feature.properties.LONG], { icon: filialIcon });
+
+                marker.bindPopup(tooltipText);
+                markers.addLayer(marker);
+            };
+
+            let filteredData = filterDataByMunicipality(filterJson, data);
+            var geojsonLayer = applyGeoJson(filteredData, onForEachFeature);
+
+            let featureFilial = filterDataByMunicipality(filiais, data); 
+            applyGeoJson(featureFilial, onForEachFeatureFilial);
+           
+            markers.addLayer(geojsonLayer);
+            map.addLayer(markers);
+ 
+            return data;
+        })
+        .catch(error => console.error('Erro ao carregar GeoJSON:', error));
+
+    var fetchCountries = fetch('countries.geojson')
+        .then(response => response.json())
+        .then(data => {
+            filteredData = filterDataByCountry(filterJson, data);
+
+            let onForEachFeature = function (feature, layer) {
+                var countries = filterJson.filter(f =>
+                    f.country.toLowerCase() === feature.properties.name?.toLowerCase()
+                );
+
+                var tooltipText = countries.map(s => {
+                    return "País: " + s.country + " - <br/>Estado: " + s.municipality + "<br/> UF: " + s.uf + "<hr/>";
+                }).join('');
+
+                addIcon(layer, countries.length, tooltipText);
+            };
+
+            applyGeoJson(filteredData, onForEachFeature);
+
+            return data;
+        })
+        .catch(error => console.error('Erro ao carregar GeoJSON:', error));
+
+    Promise.all([fetchCidadesBrasil, fetchCountries]).then(([cidadesBrasilData, countriesData]) => {
+
+    });
+
+    function addIcon(layer, iconLegend, tooltipText) {
+        let circleIcon = L.divIcon({
+            className: 'leaflet-div-icon',
+            html: '<div style="background-color: #95d669; border-radius: 50%; width: 30px; height: 30px;">' + iconLegend + '</div>',
+            iconSize: [30, 30]
+        });
+
+        var marker = L.marker(layer.getBounds().getCenter(), { icon: circleIcon }).addTo(map);
+
+        marker.bindPopup(tooltipText);
+    }
+
+    function applyGeoJson(data, onEachFeature) {
+        return L.geoJSON(data, {
+            style: {
+                color: "#888888",
+                weight: 2,
+                fillColor: "#E5E5E5",
+                fillOpacity: 0.7
+            },
+            onEachFeature: onEachFeature
+        });
+    }
+
+    function filterDataByCountry(filterJson, data) {
+        if (filterJson.length === 0) {
+            return data;
+        }
+        else {
+            return data.features.filter(feature => {
+                return filterJson.some(f =>
+                    f.country != 'BRASIL' &&
+                    f.country.toLowerCase() === feature.properties.name?.toLowerCase()
+                );
+            });
+        }
+    }
+
+    function filterDataByMunicipality(filterJson, data) {
+        if (filterJson.length === 0) {
+            return data;
+        }
+        else {
+            return data.features.filter(feature => {
+                return filterJson.some(f =>
+                    f.municipality && f.uf &&
+                    f.municipality.toLowerCase() === feature.properties.municipality?.toLowerCase() &&
+                    f.uf.toLowerCase() === feature.properties.uf?.toLowerCase()
+                );
+            });
+        }
+    }
+
+    var filialIcon = new L.icon({
+        iconUrl: "https://cdn-icons-png.flaticon.com/512/3126/3126647.png", 
+        iconSize: [24, 26],
+      }); 
+</script>
